@@ -1,0 +1,185 @@
+# Configuracion de Airflow y PostgreSQL para desarrollo local
+---
+x-airflow-common:
+  &airflow-common
+  image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:3.1.5}
+  env_file:
+    - ${ENV_FILE_PATH:-.env}
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    # Conexion a la base interna de metadatos armada con las variables del .env
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_DB_CONN:-postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:-airflow_db_password}@postgres:5432/${AIRFLOW_DB_NAME:-airflow}}
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+    
+    # Datos de conexion a la base analitica (postgres-analytics)
+    DW_USER: ${DW_USER:-admin_dw}
+    DW_PASSWORD: ${DW_PASSWORD:-analytics_password}
+    DW_DB: ${DW_DB:-data_warehouse}
+    AIRFLOW_CONN_ANALYTICS_DB: postgresql://${DW_USER:-admin_dw}:${DW_PASSWORD:-analytics_password}@postgres-analytics:5432/${DW_DB:-data_warehouse}
+    
+    # Carpeta donde estan los CSV
+    AIRFLOW_VAR_RAW_CSV_PATH: '/opt/airflow/data'
+
+  volumes:
+    - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
+    - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
+    - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
+    - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/airflow/data
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    &airflow-common-depends-on
+    postgres:
+      condition: service_healthy
+
+services:
+  # Base de datos interna de Airflow (puerto 5434)
+  postgres:
+    image: postgres:16
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: ${AIRFLOW_DB_USER:-airflow}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:-airflow_db_password}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME:-airflow}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${AIRFLOW_DB_USER:-airflow}", "-d", "${AIRFLOW_DB_NAME:-airflow}"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  # Base de datos analitica donde guardamos las tablas finales (puerto 5433)
+  postgres-analytics:
+    image: postgres:16
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: ${DW_USER:-admin_dw}
+      POSTGRES_PASSWORD: ${DW_PASSWORD:-analytics_password}
+      POSTGRES_DB: ${DW_DB:-data_warehouse}
+    volumes:
+      - postgres-analytics-volume:/var/lib/postgresql/data
+      # Ejecuta el script SQL para crear tablas la primera vez que levanta
+      - ./init-dw:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${DW_USER:-admin_dw}", "-d", "${DW_DB:-data_warehouse}"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # Inicializa la base de datos de Airflow y crea el usuario admin
+  airflow-init:
+    <<: *airflow-common
+    command: version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-admin}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-admin_password}
+
+  # Despausa y manda a ejecutar el DAG apenas el sistema termine de levantar
+  airflow-auto-trigger:
+    <<: *airflow-common
+    command: >
+      bash -c "
+        echo 'Esperando que Airflow Scheduler esté listo...'
+        sleep 5
+        until airflow dags unpause datamart_etl_ventas 2>/dev/null; do
+          echo 'Esperando que datamart_etl_ventas sea registrado...'
+          sleep 4
+        done
+        echo 'Despausando y disparando DAG datamart_etl_ventas...'
+        airflow dags trigger datamart_etl_ventas
+        echo '¡DAG ejecutado exitosamente!'
+      "
+    restart: "no"
+    depends_on:
+      <<: *airflow-common-depends-on
+      postgres-analytics:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-scheduler:
+        condition: service_healthy
+      airflow-apiserver:
+        condition: service_healthy
+
+volumes:
+  postgres-db-volume:
+  postgres-analytics-volume:

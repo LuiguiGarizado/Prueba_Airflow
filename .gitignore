@@ -1,0 +1,13 @@
+# Variables de entorno con credenciales locales
+.env
+
+# Entornos virtuales de Python y caché
+.venv/
+__pycache__/
+*.pyc
+
+# Archivos procesados intermedios generados por el pipeline ETL
+data/processed/
+
+# Logs de Airflow y contenedores
+logs/
