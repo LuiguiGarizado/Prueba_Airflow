@@ -106,7 +106,7 @@ cd PruebaDesempeño
 
 ---
 
-### Paso 2: Crear el archivo .env y generar la llave Fernet
+### Paso 2: Crear el archivo .env
 
 Copia el archivo de ejemplo para crear tu archivo `.env`:
 
@@ -116,36 +116,37 @@ cp .env.example .env
 
 *(En Windows PowerShell tambien puedes usar: `Copy-Item .env.example .env`)*.
 
-Airflow necesita una clave de encriptacion llamada Fernet para proteger los datos de conexiones. Genera una ejecutando este comando en tu terminal:
+El archivo `.env.example` ya viene con una llave Fernet valida y lista para usar. No es obligatorio generar una nueva a menos que quieras personalizarla:
 
-```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
+- **Si quieres generar tu propia llave Fernet personalizada (opcional):**
+  ```bash
+  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+  ```
+  *(O con `uv`: `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`)*
+  Luego pegas el resultado generado en la linea `AIRFLOW_FERNET_KEY=` de tu `.env`.
 
-*(O con `uv`: `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`)*
+En este mismo archivo `.env` puedes cambiar los usuarios y contraseñas si lo deseas:
 
-Abre el archivo `.env` que creaste, busca la linea `AIRFLOW_FERNET_KEY=` y pega la clave que salio en la terminal. Debe quedar algo asi:
+| Variable                     | Para que sirve                                                                 | Valor por defecto          |
+| :--------------------------- | :----------------------------------------------------------------------------- | :------------------------- |
+| `AIRFLOW_FERNET_KEY`         | Llave requerida para encriptar conexiones de Airflow                           | *(Ya viene lista en .env)* |
+| `_AIRFLOW_WWW_USER_USERNAME` | Usuario para entrar a la pagina de Airflow (puerto 8080)                       | `admin`                    |
+| `_AIRFLOW_WWW_USER_PASSWORD` | Clave para entrar a la pagina de Airflow (puerto 8080)                         | `admin_password`           |
+| `AIRFLOW_DB_USER`            | Usuario de la base interna de Airflow (puerto 5434)                            | `airflow`                  |
+| `AIRFLOW_DB_PASSWORD`        | Clave de la base interna de Airflow (puerto 5434)                              | `airflow_db_password`      |
+| `AIRFLOW_DB_NAME`            | Nombre de la base interna de Airflow                                           | `airflow`                  |
+| `DW_USER`                    | Usuario del Data Warehouse (puerto 5433 - **este usas en DBeaver**)            | `admin_dw`                 |
+| `DW_PASSWORD`                | Clave del Data Warehouse (puerto 5433 - **esta usas en DBeaver**)             | `analytics_password`       |
+| `DW_DB`                      | Nombre de la base analitica                                                    | `data_warehouse`           |
 
-```env
-AIRFLOW_FERNET_KEY=atSDuNyVOyrzxH1rYGcKIXZiCxlqApH14YtlRlajDNs=
-```
-
-En este mismo archivo `.env` puedes cambiar las contraseñas si lo deseas. Todo el sistema toma las claves de este archivo de forma automatica:
-
-| Variable                       | Para que sirve                                             | Valor por defecto          |
-| :----------------------------- | :--------------------------------------------------------- | :------------------------- |
-| `AIRFLOW_FERNET_KEY`         | Llave requerida para encriptar conexiones de Airflow       | *(Generada manualmente)* |
-| `_AIRFLOW_WWW_USER_USERNAME` | Usuario para entrar a la pagina de Airflow                 | `admin`                  |
-| `_AIRFLOW_WWW_USER_PASSWORD` | Clave para entrar a la pagina de Airflow                   | `admin_password`         |
-| `AIRFLOW_DB_USER`            | Usuario de la base interna de Airflow                      | `airflow`                |
-| `AIRFLOW_DB_PASSWORD`        | Clave de la base interna de Airflow                        | `airflow_db_password`    |
-| `AIRFLOW_DB_NAME`            | Nombre de la base interna de Airflow                       | `airflow`                |
-| `DW_USER`                    | Usuario de la base analitica (donde van los datos limpios) | `admin_dw`               |
-| `DW_PASSWORD`                | Clave de la base analitica                                 | `analytics_password`     |
-| `DW_DB`                      | Nombre de la base analitica                                | `data_warehouse`         |
-
-Nota sobre las claves:
-Si clonas el proyecto por primera vez, puedes poner las claves que quieras antes de levantar Docker. Si ya habias levantado los contenedores antes con otras claves, ejecuta `docker compose down -v` y luego `docker compose up -d` para que Postgres cree las bases con tus nuevas claves.
+Nota importante sobre las claves:
+- Si clonas el proyecto por primera vez: puedes colocar los usuarios y claves que quieras en tu `.env` antes de levantar Docker, y todo se creara con esos datos.
+- Si ya habias levantado Docker antes y decides cambiar las claves en `.env`: PostgreSQL guarda los datos en su disco y no cambia las claves de una base ya creada. Para que tome tus nuevas credenciales limpias, corre en tu terminal:
+  ```bash
+  docker compose down -v
+  docker compose up -d
+  ```
+  *(La bandera `-v` elimina los discos anteriores y arranca la base desde cero con tus nuevos usuarios y claves).*
 
 ---
 
