@@ -119,54 +119,43 @@ cp .env.example .env
 El archivo `.env.example` ya viene con una llave Fernet valida y lista para usar. No es obligatorio generar una nueva a menos que quieras personalizarla:
 
 - **Si quieres generar tu propia llave Fernet personalizada (opcional):**
+
   ```bash
   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
   ```
+
   *(O con `uv`: `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`)*
   Luego pegas el resultado generado en la linea `AIRFLOW_FERNET_KEY=` de tu `.env`.
 
 En este mismo archivo `.env` puedes cambiar los usuarios y contraseñas si lo deseas:
 
-| Variable                     | Para que sirve                                                                 | Valor por defecto          |
-| :--------------------------- | :----------------------------------------------------------------------------- | :------------------------- |
-| `AIRFLOW_FERNET_KEY`         | Llave requerida para encriptar conexiones de Airflow                           | *(Ya viene lista en .env)* |
-| `_AIRFLOW_WWW_USER_USERNAME` | Usuario para entrar a la pagina de Airflow (puerto 8080)                       | `admin`                    |
-| `_AIRFLOW_WWW_USER_PASSWORD` | Clave para entrar a la pagina de Airflow (puerto 8080)                         | `admin_password`           |
-| `AIRFLOW_DB_USER`            | Usuario de la base interna de Airflow (puerto 5434)                            | `airflow`                  |
-| `AIRFLOW_DB_PASSWORD`        | Clave de la base interna de Airflow (puerto 5434)                              | `airflow_db_password`      |
-| `AIRFLOW_DB_NAME`            | Nombre de la base interna de Airflow                                           | `airflow`                  |
-| `DW_USER`                    | Usuario del Data Warehouse (puerto 5433 - **este usas en DBeaver**)            | `admin_dw`                 |
-| `DW_PASSWORD`                | Clave del Data Warehouse (puerto 5433 - **esta usas en DBeaver**)             | `analytics_password`       |
-| `DW_DB`                      | Nombre de la base analitica                                                    | `data_warehouse`           |
+| Variable                       | Para que sirve                                                            | Valor por defecto            |
+| :----------------------------- | :------------------------------------------------------------------------ | :--------------------------- |
+| `AIRFLOW_FERNET_KEY`         | Llave requerida para encriptar conexiones de Airflow                      | *(Ya viene lista en .env)* |
+| `_AIRFLOW_WWW_USER_USERNAME` | Usuario para entrar a la pagina de Airflow (puerto 8080)                  | `admin`                    |
+| `_AIRFLOW_WWW_USER_PASSWORD` | Clave para entrar a la pagina de Airflow (puerto 8080)                    | `admin_password`           |
+| `AIRFLOW_DB_USER`            | Usuario de la base interna de Airflow (puerto 5434)                       | `airflow`                  |
+| `AIRFLOW_DB_PASSWORD`        | Clave de la base interna de Airflow (puerto 5434)                         | `airflow_db_password`      |
+| `AIRFLOW_DB_NAME`            | Nombre de la base interna de Airflow                                      | `airflow`                  |
+| `DW_USER`                    | Usuario del Data Warehouse (puerto 5433 - **este usas en DBeaver**) | `admin_dw`                 |
+| `DW_PASSWORD`                | Clave del Data Warehouse (puerto 5433 - **esta usas en DBeaver**)   | `analytics_password`       |
+| `DW_DB`                      | Nombre de la base analitica                                               | `data_warehouse`           |
 
 Nota importante sobre las claves:
+
 - Si clonas el proyecto por primera vez: puedes colocar los usuarios y claves que quieras en tu `.env` antes de levantar Docker, y todo se creara con esos datos.
 - Si ya habias levantado Docker antes y decides cambiar las claves en `.env`: PostgreSQL guarda los datos en su disco y no cambia las claves de una base ya creada. Para que tome tus nuevas credenciales limpias, corre en tu terminal:
+
   ```bash
   docker compose down -v
   docker compose up -d
   ```
+
   *(La bandera `-v` elimina los discos anteriores y arranca la base desde cero con tus nuevos usuarios y claves).*
 
 ---
 
-### Paso 3: Levantar los servicios con Docker
-
-Ejecuta en tu terminal:
-
-```bash
-docker compose up -d
-```
-
-Espera cerca de 30 a 40 segundos mientras los contenedores se encienden y quedan listos.
-
-Puedes revisar el estado de los servicios con:
-
-```bash
-docker compose ps
-```
-
-Veras los siguientes contenedores corriendo:
+### Paso 3: Levantar los servker Veras los siguientes contenedores corriendo:
 
 - `postgres`: Base de datos de metadatos de Airflow (puerto 5434).
 - `postgres-analytics`: Base de datos analitica donde se crean las tablas de ventas (puerto 5433).
@@ -546,16 +535,6 @@ Viendo los resultados reales de los datos:
    En vez de dejar descripciones repetidas o contradictorias, se calculo la descripcion que mas veces aparecia (la moda) en mayusculas y esa se dejo como nombre oficial en la dimension de productos.
 3. Dos archivos CSV con informacion repetida:
    Al revisar `data.csv` y `online_retail.csv`, se encontro que ambos traian los mismos datos. Se le dio prioridad a `data.csv` y al aplicar deduplicacion quedaron 536,639 filas unicas.
-
----
-
-## Problemas comunes y como resolverlos
-
-| Problema                                            | Causa probable                                                              | Que hacer                                                                                                        |
-| :-------------------------------------------------- | :-------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------- |
-| Dice que no existe el schema `analytics`          | No se crearon las tablas antes de correr el DAG                             | Ya no pasa porque se crean solas. Si borraste la base, ejecuta `docker compose up -d` y el contenedor las crea |
-| El DAG no sale en la pagina de Airflow              | Los contenedores apenas estan encendiendo                                   | Espera unos 20 o 30 segundos y recarga la pagina                                                                 |
-| Cambie las contraseñas en `.env` pero no conecta | Los volumenes viejos de Docker siguen guardando las contraseñas anteriores | Corre `docker compose down -v` y luego `docker compose up -d` para reiniciar limpio                          |
 
 ---
 
