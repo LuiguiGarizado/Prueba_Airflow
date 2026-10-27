@@ -23,7 +23,9 @@ x-airflow-common:
     DW_USER: ${DW_USER:-admin_dw}
     DW_PASSWORD: ${DW_PASSWORD:-analytics_password}
     DW_DB: ${DW_DB:-data_warehouse}
-    AIRFLOW_CONN_ANALYTICS_DB: postgresql://${DW_USER:-admin_dw}:${DW_PASSWORD:-analytics_password}@postgres-analytics:5432/${DW_DB:-data_warehouse}
+    DW_HOST: ${DW_HOST:-postgres-analytics}
+    DW_PORT: ${DW_PORT:-5432}
+    AIRFLOW_CONN_ANALYTICS_DB: postgresql://${DW_USER:-admin_dw}:${DW_PASSWORD:-analytics_password}@${DW_HOST:-postgres-analytics}:${DW_PORT:-5432}/${DW_DB:-data_warehouse}
     
     # Carpeta donde estan los CSV
     AIRFLOW_VAR_RAW_CSV_PATH: '/opt/airflow/data'
@@ -158,6 +160,11 @@ services:
     <<: *airflow-common
     command: >
       bash -c "
+        echo 'Registrando conexion analytics_db y variable RAW_CSV_PATH para la interfaz web...'
+        airflow connections delete analytics_db 2>/dev/null || true
+        airflow connections add analytics_db --conn-type postgres --conn-host ${DW_HOST:-postgres-analytics} --conn-login ${DW_USER:-admin_dw} --conn-password ${DW_PASSWORD:-analytics_password} --conn-schema ${DW_DB:-data_warehouse} --conn-port ${DW_PORT:-5432} 2>/dev/null || true
+        airflow variables set RAW_CSV_PATH /opt/airflow/data 2>/dev/null || true
+
         echo 'Esperando que Airflow Scheduler esté listo...'
         sleep 5
         until airflow dags unpause datamart_etl_ventas 2>/dev/null; do

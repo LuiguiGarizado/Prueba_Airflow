@@ -11,7 +11,7 @@ Flujo del proceso: extract (extraer) -> transform (transformar) -> load (cargar)
 1. [Estructura del proyecto](#estructura-del-proyecto)
 2. [Requisitos previos](#requisitos-previos)
 3. [Instalacion de dependencias con uv (opcional)](#instalacion-de-dependencias-con-uv-opcional)
-4. [Como poner a funcionar el proyecto](#como-poner-a-funcionar-el-proyecto)
+4. [Como poner a funcionar el proyecto paso a paso](#como-poner-a-funcionar-el-proyecto-paso-a-paso)
 5. [Consultas SQL y respuestas de negocio](#consultas-sql-y-respuestas-de-negocio)
 6. [Recomendaciones para el equipo de producto](#recomendaciones-para-el-equipo-de-producto)
 7. [Reglas aplicadas a los datos](#reglas-aplicadas-a-los-datos)
@@ -91,31 +91,46 @@ uv sync
 
 Esto crea la carpeta `.venv` e instala las librerias necesarias (pandas, sqlalchemy, psycopg2-binary, pyarrow, openpyxl, numpy).
 
-## Como poner a funcionar el proyecto
+## Como poner a funcionar el proyecto paso a paso
 
-### Paso 1: Crear el archivo .env y generar la llave Fernet
+Sigue estos pasos en orden, desde clonar el repositorio hasta verificar los datos cargados en PostgreSQL:
 
-Copia el archivo de ejemplo para crear tu `.env`:
+### Paso 1: Clonar el repositorio y entrar a la carpeta
+
+Abre tu terminal (PowerShell en Windows o Bash en Linux/Mac) y descarga el proyecto:
+
+```bash
+git clone <URL_DEL_REPOSITORIO>
+cd PruebaDesempeño
+```
+
+---
+
+### Paso 2: Crear el archivo .env y generar la llave Fernet
+
+Copia el archivo de ejemplo para crear tu archivo `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-Genera tu propia llave de encriptacion Fernet ejecutando este comando en tu terminal:
+*(En Windows PowerShell tambien puedes usar: `Copy-Item .env.example .env`)*.
+
+Airflow necesita una clave de encriptacion llamada Fernet para proteger los datos de conexiones. Genera una ejecutando este comando en tu terminal:
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-*(O si usas `uv`: `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`)*
+*(O con `uv`: `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`)*
 
-Copia la clave resultante y pegala en tu `.env`:
+Abre el archivo `.env` que creaste, busca la linea `AIRFLOW_FERNET_KEY=` y pega la clave que salio en la terminal. Debe quedar algo asi:
 
 ```env
-AIRFLOW_FERNET_KEY=tu_clave_generada_aqui
+AIRFLOW_FERNET_KEY=atSDuNyVOyrzxH1rYGcKIXZiCxlqApH14YtlRlajDNs=
 ```
 
-En este archivo tambien puedes cambiar las contraseñas que quieras. El codigo arma las conexiones de forma automatica, asi que cambiar una clave no rompe nada:
+En este mismo archivo `.env` puedes cambiar las contraseñas si lo deseas. Todo el sistema toma las claves de este archivo de forma automatica:
 
 | Variable                       | Para que sirve                                             | Valor por defecto          |
 | :----------------------------- | :--------------------------------------------------------- | :------------------------- |
@@ -134,38 +149,130 @@ Si clonas el proyecto por primera vez, puedes poner las claves que quieras antes
 
 ---
 
-### Paso 2: Levantar Docker
+### Paso 3: Levantar los servicios con Docker
 
-Desde la carpeta del proyecto, ejecuta:
+Ejecuta en tu terminal:
 
 ```bash
 docker compose up -d
 ```
 
-Esto inicia los siguientes servicios:
+Espera cerca de 30 a 40 segundos mientras los contenedores se encienden y quedan listos.
 
-| Servicio                  | Puerto en tu maquina | Que hace                                                |
-| :------------------------ | :------------------- | :------------------------------------------------------ |
-| `postgres`              | 5434                 | Guarda la informacion interna que necesita Airflow      |
-| `postgres-analytics`    | 5433                 | Guarda las tablas limpias de ventas y rechazos          |
-| `airflow-apiserver`     | 8080                 | La pagina web de Airflow                                |
-| `airflow-scheduler`     | -                    | Programa y coordina las tareas                          |
-| `airflow-dag-processor` | -                    | Lee los archivos de los DAGs                            |
-| `airflow-triggerer`     | -                    | Soporte para tareas asincronas                          |
-| `airflow-auto-trigger`  | -                    | Despausa y manda a correr el DAG apenas todo este listo |
+Puedes revisar el estado de los servicios con:
+
+```bash
+docker compose ps
+```
+
+Veras los siguientes contenedores corriendo:
+
+- `postgres`: Base de datos de metadatos de Airflow (puerto 5434).
+- `postgres-analytics`: Base de datos analitica donde se crean las tablas de ventas (puerto 5433).
+- `airflow-apiserver`: Pagina web de Airflow (puerto 8080).
+- `airflow-scheduler`, `airflow-dag-processor`, `airflow-triggerer`: Procesos internos que ejecutan los DAGs.
+- `airflow-auto-trigger`: Contenedor que activa y manda a correr el DAG apenas todo este listo.
 
 ---
 
-### Paso 3: Como corre el proceso
+### Paso 4: Validar las Connections y Variables en Airflow
 
-No tienes que hacer nada manual en DBeaver ni en Airflow:
+El archivo `docker-compose.yml` registra de forma automatica la conexion al Data Warehouse y la ruta de los archivos planos, para que no tengas que crearlas a mano en la interfaz.
 
-1. Docker crea las tablas en PostgreSQL analitico usando `init-dw/tablas.sql`.
-2. El contenedor `airflow-auto-trigger` espera a que todo este encendido, activa el DAG `datamart_etl_ventas` y lo ejecuta enseguida.
-3. Si quieres ver el avance en pantalla:
-   - Entra a `http://localhost:8080`.
-   - Inicia sesion con `admin` y `admin_password` (o lo que pusiste en `.env`).
-   - Veras el DAG `datamart_etl_ventas` pasando por sus tres tareas (`extract` -> `transform` -> `load`) hasta terminar en verde (Success).
+Puedes comprobar que quedaron bien configuradas de dos formas:
+
+#### Opcion A: Desde la pagina web de Airflow (Recomendado)
+
+1. Abre tu navegador y entra a: `http://localhost:8080`
+2. Inicia sesion con:
+   - Usuario: `admin`
+   - Clave: `admin_password` (o lo que pusiste en tu `.env`)
+3. **Revisar la Connection (conexion a la base analitica):**
+   - En el menu superior, ve a **Admin** -> **Connections**.
+   - Busca en la lista la conexion llamada **`analytics_db`**.
+   - Veras que apunta al host `postgres-analytics`, puerto `5432` y base `data_warehouse`.
+4. **Revisar la Variable (ruta de los CSV):**
+   - En el menu superior, ve a **Admin** -> **Variables**.
+   - Busca la variable llamada **`RAW_CSV_PATH`**.
+   - Su valor debe ser exactamente: `/opt/airflow/data`.
+
+#### Opcion B: Por la terminal con comandos de Airflow
+
+Si quieres verificarlo rapidamente sin abrir el navegador, corre estos dos comandos en tu terminal:
+
+```bash
+# Validar la conexion:
+docker compose exec airflow-apiserver airflow connections get analytics_db
+
+# Validar la variable:
+docker compose exec airflow-apiserver airflow variables get RAW_CSV_PATH
+```
+
+---
+
+### Paso 5: Monitorear la ejecucion del DAG
+
+1. En la pagina web de Airflow (`http://localhost:8080`), entra a la pestaña **DAGs**.
+2. Veras el DAG llamado **`datamart_etl_ventas`**.
+3. Gracias al servicio `airflow-auto-trigger`, el DAG se despausa y se ejecuta automaticamente al levantar Docker.
+4. Si haces clic sobre el nombre del DAG y entras a la vista de **Grid** o **Graph**, veras las tres tareas corriendo en orden:
+   - `extract`: Lee los dos archivos CSV y los une.
+   - `transform`: Limpia clientes, fechas, codigos de producto y separa errores.
+   - `load`: Sube los datos limpios a PostgreSQL analitico.
+5. Cuando las 3 tareas terminen con un borde verde oscuro (**Success**), los datos estaran cargados.
+
+*(Nota: si alguna vez quieres volverlo a ejecutar manualmente, solo haz clic en el boton arriba a la derecha que dice **Trigger DAG**).*
+
+---
+
+### Paso 6: Verificar que los datos llegaron a PostgreSQL
+
+Para confirmar que los datos se guardaron correctamente en la base analitica, puedes revisarlo con DBeaver o directamente desde tu terminal.
+
+#### Opcion A: En DBeaver
+
+Crea una nueva conexion de tipo **PostgreSQL** con estos datos:
+
+- Host: `localhost`
+- Port (Puerto): `5433` *(importante: es 5433, no 5432)*
+- Database: `data_warehouse`
+- Username: `admin_dw`
+- Password: `analytics_password` (o la que pusiste en tu `.env`)
+
+Abre un editor SQL y corre esta consulta para ver el total de filas cargadas:
+
+```sql
+SELECT 'fact_transactions' AS tabla, COUNT(*) AS total_filas FROM analytics.fact_transactions
+UNION ALL
+SELECT 'dim_products', COUNT(*) FROM analytics.dim_products
+UNION ALL
+SELECT 'daily_product_revenue', COUNT(*) FROM analytics.daily_product_revenue
+UNION ALL
+SELECT 'rejected_records', COUNT(*) FROM audit.rejected_records;
+```
+
+Deberas ver los siguientes numeros:
+
+- `fact_transactions`: **535,463** filas (todas las transacciones de ventas y devoluciones validas).
+- `dim_products`: **3,848** productos unicos en el catalogo.
+- `daily_product_revenue`: **278,942** registros del resumen consolidado por dia y producto.
+- `rejected_records`: **1,176** registros descartados por auditoria por cada ejecucion (ventas con precio <= 0).
+
+#### Opcion B: Por terminal (sin abrir DBeaver)
+
+Corre este comando en tu terminal para obtener el conteo de inmediato:
+
+```bash
+docker compose exec postgres-analytics psql -U admin_dw -d data_warehouse -c "
+SELECT 'fact_transactions' AS tabla, COUNT(*) AS filas FROM analytics.fact_transactions
+UNION ALL
+SELECT 'dim_products', COUNT(*) FROM analytics.dim_products
+UNION ALL
+SELECT 'daily_product_revenue', COUNT(*) FROM analytics.daily_product_revenue
+UNION ALL
+SELECT 'rejected_records', COUNT(*) FROM audit.rejected_records;
+"
+```
 
 ---
 
